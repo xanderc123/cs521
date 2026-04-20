@@ -6,6 +6,7 @@ Graduate-level course presentation tool.
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -269,6 +270,21 @@ st.markdown("""
 [data-testid="stAppViewContainer"] { background: #0d1117; }
 [data-testid="stSidebar"] { background: #161b22; }
 
+/* Global text color: white-ish gray */
+[data-testid="stAppViewContainer"],
+[data-testid="stSidebar"] {
+    color: #e5e7eb !important;
+}
+/* Do not force gray onto real <button> labels (breaks secondary / default buttons) */
+[data-testid="stAppViewContainer"] *:not(button):not(button *),
+[data-testid="stSidebar"] *:not(button):not(button *) {
+    color: #d1d5db !important;
+}
+/* Sidebar form labels (sliders, radio) stay readable */
+[data-testid="stSidebar"] label {
+    color: #e5e7eb !important;
+}
+
 .metric-card {
     background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
     border: 1px solid #374151;
@@ -292,35 +308,47 @@ st.markdown("""
 
 .block-public {
     display: inline-block;
-    background: linear-gradient(135deg,#1d4ed8,#2563eb);
-    border: 2px solid #3b82f6;
+    background: linear-gradient(135deg, #1e40af, #2563eb);
+    border: 2px solid #60a5fa;
     border-radius: 8px;
     padding: 6px 12px;
     margin: 3px;
     font-size: 0.75rem;
-    color: #e0f2fe;
+    color: #f8fafc !important;
+    font-family: monospace;
+}
+/* Selfish block already on the public main chain — warm amber (distinct from honest blue & private red) */
+.block-selfish-main {
+    display: inline-block;
+    background: linear-gradient(135deg, #9a3412, #c2410c);
+    border: 2px solid #fb923c;
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin: 3px;
+    font-size: 0.75rem;
+    color: #fff7ed !important;
     font-family: monospace;
 }
 .block-selfish-private {
     display: inline-block;
-    background: linear-gradient(135deg,#7c2d12,#991b1b);
-    border: 2px solid #ef4444;
+    background: linear-gradient(135deg, #7f1d1d, #991b1b);
+    border: 2px solid #f87171;
     border-radius: 8px;
     padding: 6px 12px;
     margin: 3px;
     font-size: 0.75rem;
-    color: #fee2e2;
+    color: #fecaca !important;
     font-family: monospace;
 }
 .block-orphan {
     display: inline-block;
-    background: #1f2937;
-    border: 2px dashed #6b7280;
+    background: #1e293b;
+    border: 2px dashed #94a3b8;
     border-radius: 8px;
     padding: 6px 12px;
     margin: 3px;
     font-size: 0.75rem;
-    color: #6b7280;
+    color: #cbd5e1 !important;
     font-family: monospace;
     text-decoration: line-through;
 }
@@ -334,6 +362,10 @@ st.markdown("""
     overflow-y: auto;
     font-family: monospace;
     font-size: 0.82rem;
+}
+
+[data-testid="stCaption"] {
+    color: #cbd5e1 !important;
 }
 
 .lead-badge {
@@ -367,12 +399,138 @@ st.markdown("""
     border-left: 4px solid #3b82f6;
     border-radius: 6px;
     padding: 12px 16px;
-    font-size: 0.85rem;
-    color: #c9d1d9;
+    font-size: 0.9rem;
+    color: #eceff4;
     margin: 8px 0;
+    line-height: 1.55;
+}
+.info-box * {
+    color: inherit !important;
+}
+.info-box strong {
+    color: #f9fafb !important;
+    font-weight: 700;
+}
+/* Inline <code>: global * color + default light bg made text invisible */
+.info-box code,
+[data-testid="stMarkdownContainer"] code {
+    background: #21262d !important;
+    color: #f3f4f6 !important;
+    border: 1px solid #30363d !important;
+    padding: 0.2em 0.5em !important;
+    border-radius: 6px !important;
+    font-size: 0.92em !important;
+}
+[data-testid="stMarkdownContainer"] pre {
+    background: #21262d !important;
+    border: 1px solid #30363d !important;
+    border-radius: 8px !important;
+    padding: 12px 14px !important;
+}
+[data-testid="stMarkdownContainer"] pre code {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    color: #f3f4f6 !important;
 }
 </style>
 """, unsafe_allow_html=True)
+
+# Plotly 图例背景：默认半透明；悬停变实；移开 2 秒后恢复（需访问父页面 DOM）
+components.html(
+    """
+<div style="height:0;width:0;overflow:hidden;">plotly-legend-opacity</div>
+<script>
+(function () {
+  try {
+    var root = (window.parent && window.parent.document) ? window.parent.document : document;
+
+    var REST = 0.45;
+    var HOVER = 1.0;
+    var DELAY_MS = 1000;
+
+    function setFillOpacity(el, v) {
+      if (!el) return;
+      el.setAttribute("fill-opacity", String(v));
+      el.style.fillOpacity = String(v);
+    }
+
+    function hookLegend(g) {
+      if (!g || g.getAttribute("data-fillopacity-hook")) return;
+      var bg = g.querySelector("rect.bg") || g.querySelector("rect");
+      if (!bg) return;
+      g.setAttribute("data-fillopacity-hook", "1");
+      bg.style.transition = "fill-opacity 0.2s ease";
+      setFillOpacity(bg, REST);
+      var timer = null;
+      g.addEventListener("mouseenter", function () {
+        if (timer) { clearTimeout(timer); timer = null; }
+        setFillOpacity(bg, HOVER);
+      });
+      g.addEventListener("mouseleave", function () {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+          setFillOpacity(bg, REST);
+          timer = null;
+        }, DELAY_MS);
+      });
+    }
+
+    function scan() {
+      root.querySelectorAll('[data-testid="stPlotlyChart"] svg g.legend').forEach(hookLegend);
+    }
+
+    if (!root.__plotlyLegendFillOpacityObs) {
+      root.__plotlyLegendFillOpacityObs = true;
+      var obs = new MutationObserver(scan);
+      if (root.body) obs.observe(root.body, { childList: true, subtree: true });
+      setInterval(scan, 1200);
+    }
+    scan();
+  } catch (e) {}
+})();
+
+(function () {
+  try {
+    var root = (window.parent && window.parent.document) ? window.parent.document : document;
+
+    function paintInteractiveActionButtons() {
+      root.querySelectorAll('[data-testid="stButton"] button').forEach(function (btn) {
+        if (btn.getAttribute("data-sl-style")) return;
+        var t = (btn.textContent || "").replace(/\s+/g, " ").trim();
+        if (t.indexOf("Honest Miner") !== -1) {
+          btn.setAttribute("data-sl-style", "honest");
+          btn.style.setProperty("background", "linear-gradient(135deg, #0f766e, #14b8a6)", "important");
+          btn.style.setProperty("color", "#ecfdf5", "important");
+          btn.style.setProperty("border", "1px solid #5eead4", "important");
+          btn.querySelectorAll("p, span, div").forEach(function (n) {
+            n.style.setProperty("color", "#ecfdf5", "important");
+          });
+        } else if (t.indexOf("Reset Simulation") !== -1) {
+          btn.setAttribute("data-sl-style", "reset");
+          btn.style.setProperty("background", "linear-gradient(135deg, #334155, #64748b)", "important");
+          btn.style.setProperty("color", "#f8fafc", "important");
+          btn.style.setProperty("border", "1px solid #94a3b8", "important");
+          btn.querySelectorAll("p, span, div").forEach(function (n) {
+            n.style.setProperty("color", "#f8fafc", "important");
+          });
+        }
+      });
+    }
+
+    if (!root.__stInteractiveActionBtnPaint) {
+      root.__stInteractiveActionBtnPaint = true;
+      var obs = new MutationObserver(paintInteractiveActionButtons);
+      if (root.body) obs.observe(root.body, { childList: true, subtree: true });
+      setInterval(paintInteractiveActionButtons, 1200);
+    }
+    paintInteractiveActionButtons();
+  } catch (e) {}
+})();
+</script>
+""",
+    height=1,
+)
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -457,9 +615,13 @@ if "Theory" in mode:
             colorbar=dict(
                 title=dict(
                     text="Excess Revenue<br>(vs. honest mining)",
-                    font=dict(color="#9ca3af"),
+                    font=dict(color="#e8eaed", size=12),
                 ),
-                tickfont=dict(color="#9ca3af"),
+                tickfont=dict(color="#d1d5db", size=11),
+                thickness=14,
+                len=0.82,
+                y=0.5,
+                yanchor="middle",
             ),
             hovertemplate="α=%{x:.2f}  γ=%{y:.2f}<br>Excess Rev=%{z:.3f}<extra></extra>",
         ))
@@ -483,14 +645,24 @@ if "Theory" in mode:
         ))
 
         fig_heat.update_layout(
-            height=400,
+            height=520,
             paper_bgcolor="#0d1117",
             plot_bgcolor="#0d1117",
-            font=dict(color="#c9d1d9"),
+            font=dict(color="#e8eaed"),
             xaxis=dict(title="α (Selfish Hash Rate)", gridcolor="#21262d", tickformat=".0%"),
             yaxis=dict(title="γ (Propagation Advantage)", gridcolor="#21262d", tickformat=".0%"),
-            legend=dict(bgcolor="#161b22", bordercolor="#374151", borderwidth=1),
-            margin=dict(l=60, r=20, t=30, b=60),
+            legend=dict(
+                bgcolor="#161b22",
+                bordercolor="#374151",
+                borderwidth=1,
+                font=dict(color="#e8eaed", size=12),
+                x=0.99,
+                y=0.99,
+                xanchor="right",
+                yanchor="top",
+                valign="top",
+            ),
+            margin=dict(l=60, r=110, t=65, b=60),
         )
         st.plotly_chart(fig_heat, width="stretch")
 
@@ -533,14 +705,21 @@ if "Theory" in mode:
         ))
 
         fig_rev.update_layout(
-            height=400,
+            height=520,
             paper_bgcolor="#0d1117",
             plot_bgcolor="#0d1117",
-            font=dict(color="#c9d1d9"),
+            font=dict(color="#e8eaed"),
             xaxis=dict(title="α", gridcolor="#21262d", tickformat=".0%"),
             yaxis=dict(title="Relative Revenue", gridcolor="#21262d", tickformat=".0%"),
-            legend=dict(bgcolor="#161b22", bordercolor="#374151", borderwidth=1, x=0.01, y=0.99),
-            margin=dict(l=60, r=20, t=30, b=60),
+            legend=dict(
+                bgcolor="#161b22",
+                bordercolor="#374151",
+                borderwidth=1,
+                x=0.01,
+                y=0.99,
+                font=dict(color="#e8eaed", size=12),
+            ),
+            margin=dict(l=60, r=20, t=65, b=60),
         )
         st.plotly_chart(fig_rev, width="stretch")
 
@@ -581,60 +760,81 @@ if "Theory" in mode:
     st.divider()
     st.markdown('<div class="section-header">Eyal-Sirer State Machine</div>', unsafe_allow_html=True)
 
-    col_sm1, col_sm2 = st.columns([1.2, 1])
-    with col_sm1:
-        fig_sm = go.Figure()
+    fig_sm = go.Figure()
 
-        # States as nodes
-        states = {
-            "δ=0\n(Tied)": (0.5, 0.5),
-            "δ=1\n(Lead 1)": (2.0, 0.5),
-            "δ=2\n(Lead 2)": (3.5, 0.5),
-            "δ≥3\n(Large Lead)": (5.0, 0.5),
-        }
-        colors = ["#1d4ed8", "#b45309", "#92400e", "#7c2d12"]
+    # States as nodes
+    states = {
+        "δ=0\n(Tied)": (0.5, 0.5),
+        "δ=1\n(Lead 1)": (2.0, 0.5),
+        "δ=2\n(Lead 2)": (3.5, 0.5),
+        "δ≥3\n(Large Lead)": (5.0, 0.5),
+    }
+    colors = ["#1d4ed8", "#b45309", "#92400e", "#7c2d12"]
 
-        for (label, pos), color in zip(states.items(), colors):
-            fig_sm.add_shape(type="rect",
-                x0=pos[0]-0.4, y0=pos[1]-0.25, x1=pos[0]+0.4, y1=pos[1]+0.25,
-                fillcolor=color, line=dict(color="white", width=1.5))
-            fig_sm.add_annotation(x=pos[0], y=pos[1], text=label,
-                font=dict(color="white", size=11), showarrow=False)
+    for (label, pos), color in zip(states.items(), colors):
+        fig_sm.add_shape(type="rect",
+            x0=pos[0]-0.4, y0=pos[1]-0.25, x1=pos[0]+0.4, y1=pos[1]+0.25,
+            fillcolor=color, line=dict(color="white", width=1.5))
+        fig_sm.add_annotation(x=pos[0], y=pos[1], text=label,
+            font=dict(color="#f9fafb", size=13), showarrow=False)
 
-        # Transitions (arrows with labels)
-        transitions = [
-            # (from_x, from_y, to_x, to_y, label, color)
-            (0.9, 0.5, 1.6, 0.5, "SM finds\nblock", "#ef4444"),
-            (0.5, 0.25, 0.5, -0.1, "Honest finds\n(publish 0, earn 0)", "#6b7280"),
-            (2.0, 0.25, 1.0, 0.0, "Honest finds\n(RACE, γ wins)", "#f59e0b"),
-            (2.4, 0.5, 3.1, 0.5, "SM finds\nblock", "#ef4444"),
-            (3.5, 0.25, 2.0, -0.15, "Honest finds\n(publish 2, orphan honest)", "#10b981"),
-            (3.9, 0.5, 4.6, 0.5, "SM finds", "#ef4444"),
-            (5.0, 0.25, 3.9, -0.1, "Honest finds\n(release 1)", "#3b82f6"),
-        ]
-
-        for (x0, y0, x1, y1, label, color) in transitions:
-            fig_sm.add_annotation(
-                ax=x0, ay=y0, x=x1, y=y1,
-                xref="x", yref="y", axref="x", ayref="y",
-                showarrow=True, arrowhead=2, arrowsize=1.2,
-                arrowwidth=2, arrowcolor=color,
-                font=dict(color=color, size=9),
-                text=label,
-            )
-
-        fig_sm.update_layout(
-            height=320,
-            paper_bgcolor="#0d1117",
-            plot_bgcolor="#161b22",
-            xaxis=dict(visible=False, range=[-0.5, 6]),
-            yaxis=dict(visible=False, range=[-0.6, 1.2]),
-            margin=dict(l=10, r=10, t=10, b=10),
+    # Transitions: arrow colors carry meaning; label text uses a fixed light tone on dark bg.
+    LABEL_TEXT_COLOR = "#e8eaed"
+    SM_ARROW = "#ef4444"
+    # Horizontal SM edges: text above the arrow (arrow-only annotation + separate label)
+    sm_horizontal = [
+        (0.9, 0.5, 1.6, 0.5, "SM finds\nblock"),
+        (2.4, 0.5, 3.1, 0.5, "SM finds\nblock"),
+        (3.9, 0.5, 4.6, 0.5, "SM finds\nblock"),
+    ]
+    label_y_above = 0.82
+    for x0, y0, x1, y1, label in sm_horizontal:
+        fig_sm.add_annotation(
+            ax=x0, ay=y0, x=x1, y=y1,
+            xref="x", yref="y", axref="x", ayref="y",
+            showarrow=True, arrowhead=2, arrowsize=1.2,
+            arrowwidth=2, arrowcolor=SM_ARROW,
+            text="",
         )
-        st.plotly_chart(fig_sm, width="stretch")
+        fig_sm.add_annotation(
+            x=(x0 + x1) / 2,
+            y=label_y_above,
+            xref="x", yref="y",
+            text=label,
+            showarrow=False,
+            xanchor="center",
+            yanchor="bottom",
+            font=dict(color=LABEL_TEXT_COLOR, size=11),
+        )
 
-    with col_sm2:
-        st.markdown("""
+    honest_transitions = [
+        (0.5, 0.22, 0.5, -0.14, "Honest finds\n(publish 0, earn 0)", "#9ca3af"),
+        (2.0, 0.22, 1.0, -0.05, "Honest finds\n(RACE, γ wins)", "#fbbf24"),
+        (3.5, 0.22, 2.0, -0.18, "Honest finds\n(publish 2, orphan honest)", "#34d399"),
+        (5.0, 0.22, 3.9, -0.14, "Honest finds\n(release 1)", "#60a5fa"),
+    ]
+    for x0, y0, x1, y1, label, color in honest_transitions:
+        fig_sm.add_annotation(
+            ax=x0, ay=y0, x=x1, y=y1,
+            xref="x", yref="y", axref="x", ayref="y",
+            showarrow=True, arrowhead=2, arrowsize=1.2,
+            arrowwidth=2, arrowcolor=color,
+            font=dict(color=LABEL_TEXT_COLOR, size=11),
+            text=label,
+        )
+
+    fig_sm.update_layout(
+        height=400,
+        autosize=True,
+        paper_bgcolor="#0d1117",
+        plot_bgcolor="#161b22",
+        xaxis=dict(visible=False, range=[-0.5, 6]),
+        yaxis=dict(visible=False, range=[-0.72, 1.22]),
+        margin=dict(l=10, r=10, t=10, b=10),
+    )
+    st.plotly_chart(fig_sm, width="stretch")
+
+    st.markdown("""
 <div class="info-box">
 <strong>State Machine Rules (Eyal & Sirer)</strong><br><br>
 
@@ -701,7 +901,12 @@ elif "Interactive" in mode:
     btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
 
     with btn_col1:
-        if st.button("⛏️ Honest Miner Finds Block", width="stretch", type="secondary"):
+        if st.button(
+            "⛏️ Honest Miner Finds Block",
+            width="stretch",
+            type="secondary",
+            key="interactive_btn_honest",
+        ):
             st.session_state.sim_state = handle_event(
                 st.session_state.sim_state, "honest_finds", alpha, gamma)
             st.session_state.history.append(("honest", st.session_state.sim_state.revenue_selfish()))
@@ -715,7 +920,12 @@ elif "Interactive" in mode:
             st.rerun()
 
     with btn_col3:
-        if st.button("🔄 Reset Simulation", width="stretch"):
+        if st.button(
+            "🔄 Reset Simulation",
+            width="stretch",
+            type="secondary",
+            key="interactive_btn_reset",
+        ):
             st.session_state.sim_state = SimState()
             st.session_state.history = []
             st.rerun()
@@ -742,8 +952,12 @@ elif "Interactive" in mode:
         else:
             chain_html = ""
             for blk in state.public_chain[-15:]:  # show last 15
-                badge = "block-public" if blk.block_type == BlockType.HONEST else "block-selfish-private"
-                miner_icon = "👤" if blk.miner == "Honest Miners" else "🔴"
+                badge = (
+                    "block-public"
+                    if blk.block_type == BlockType.HONEST
+                    else "block-selfish-main"
+                )
+                miner_icon = "👤" if blk.miner == "Honest Miners" else "⛏️"
                 chain_html += f'<span class="{badge}">{miner_icon} #{blk.id}</span> → '
             chain_html = chain_html.rstrip(" → ")
             st.markdown(chain_html + " 🏁", unsafe_allow_html=True)
@@ -842,10 +1056,15 @@ elif "Interactive" in mode:
         fig_hist.update_layout(
             height=260,
             paper_bgcolor="#0d1117", plot_bgcolor="#161b22",
-            font=dict(color="#c9d1d9"),
+            font=dict(color="#e8eaed"),
             xaxis=dict(title="Round", gridcolor="#21262d"),
             yaxis=dict(title="Revenue Share", gridcolor="#21262d", tickformat=".0%"),
-            legend=dict(bgcolor="#161b22", bordercolor="#374151", borderwidth=1),
+            legend=dict(
+                bgcolor="#161b22",
+                bordercolor="#374151",
+                borderwidth=1,
+                font=dict(color="#e8eaed", size=12),
+            ),
             margin=dict(l=60, r=20, t=20, b=50),
         )
         st.plotly_chart(fig_hist, width="stretch")
@@ -988,9 +1207,14 @@ elif "Auto" in mode:
             height=600,
             paper_bgcolor="#0d1117",
             plot_bgcolor="#161b22",
-            font=dict(color="#c9d1d9"),
+            font=dict(color="#e8eaed"),
             showlegend=True,
-            legend=dict(bgcolor="#161b22", bordercolor="#374151", borderwidth=1),
+            legend=dict(
+                bgcolor="#161b22",
+                bordercolor="#374151",
+                borderwidth=1,
+                font=dict(color="#e8eaed", size=12),
+            ),
         )
         for ann in fig_sim.layout.annotations:
             ann.font.color = "#9ca3af"
@@ -1046,10 +1270,15 @@ elif "Auto" in mode:
         fig_sweep.update_layout(
             height=360,
             paper_bgcolor="#0d1117", plot_bgcolor="#161b22",
-            font=dict(color="#c9d1d9"),
+            font=dict(color="#e8eaed"),
             xaxis=dict(title="α (Hash Rate)", gridcolor="#21262d", tickformat=".0%"),
             yaxis=dict(title="Revenue Share", gridcolor="#21262d", tickformat=".0%"),
-            legend=dict(bgcolor="#161b22", bordercolor="#374151", borderwidth=1),
+            legend=dict(
+                bgcolor="#161b22",
+                bordercolor="#374151",
+                borderwidth=1,
+                font=dict(color="#e8eaed", size=12),
+            ),
             margin=dict(l=60, r=20, t=20, b=60),
         )
         st.plotly_chart(fig_sweep, width="stretch")

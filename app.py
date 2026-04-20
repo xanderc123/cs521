@@ -5,252 +5,35 @@ Based on: "Majority is not Enough: Bitcoin Mining is Vulnerable" (Eyal & Sirer, 
 Graduate-level course presentation tool.
 """
 
-import streamlit as st
-import streamlit.components.v1 as components
+import random
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
+import streamlit as st
 from plotly.subplots import make_subplots
-import time
-import random
-from dataclasses import dataclass, field
-from typing import List, Optional
-from enum import Enum
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Data Structures
-# ─────────────────────────────────────────────────────────────────────────────
-
-class BlockType(Enum):
-    HONEST = "honest"
-    SELFISH = "selfish"
-    ORPHAN = "orphan"
-
-@dataclass
-class Block:
-    id: int
-    block_type: BlockType
-    height: int
-    miner: str
-    is_orphan: bool = False
-    parent_id: Optional[int] = None
-
-@dataclass
-class SimState:
-    public_chain: List[Block] = field(default_factory=list)
-    private_chain: List[Block] = field(default_factory=list)
-    orphaned_blocks: List[Block] = field(default_factory=list)
-    selfish_lead: int = 0          # δ in the paper
-    total_blocks_mined: int = 0
-    selfish_blocks_in_main: int = 0
-    honest_blocks_in_main: int = 0
-    honest_orphan_count: int = 0
-    selfish_orphan_count: int = 0
-    events: List[str] = field(default_factory=list)
-    round_num: int = 0
-
-    def revenue_selfish(self) -> float:
-        total = self.selfish_blocks_in_main + self.honest_blocks_in_main
-        if total == 0:
-            return 0.0
-        return self.selfish_blocks_in_main / total
-
-    def revenue_honest(self) -> float:
-        total = self.selfish_blocks_in_main + self.honest_blocks_in_main
-        if total == 0:
-            return 0.0
-        return self.honest_blocks_in_main / total
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Core Selfish Mining Logic  (Eyal & Sirer state machine)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def selfish_mining_revenue(alpha: float, gamma: float) -> float:
-    """
-    Closed-form relative revenue for a selfish pool (Eyal & Sirer, 2014).
-
-    alpha : fraction of total hash rate controlled by selfish pool
-    gamma : fraction of honest miners that mine on selfish chain during a race
-            (network propagation advantage, 0 ≤ γ ≤ 1)
-
-    Returns: relative revenue of the selfish pool
-    """
-    if alpha <= 0:
-        return 0.0
-    if alpha >= 1:
-        return 1.0
-    beta = 1 - alpha
-    numerator   = alpha * (beta**2 + beta * alpha * gamma * (4*alpha + gamma*(1 - 2*alpha)) - alpha**3)
-    denominator = 1 - alpha * (1 + alpha * (2 - alpha))
-    # Protect against degenerate denominator
-    if abs(denominator) < 1e-12:
-        return alpha
-    rev = numerator / denominator
-    # Fallback to simpler formula if complex case returns garbage
-    # Simple version from original paper
-    simple = (alpha * (1-alpha)**2 * (4*alpha + gamma*(1-2*alpha)) - alpha**3) / \
-             (1 - alpha*(1 + (2-alpha)*alpha))
-    try:
-        result = simple
-    except Exception:
-        result = alpha
-    return max(0.0, min(1.0, result))
-
-
-def profitability_threshold(gamma: float) -> float:
-    """
-    Minimum alpha for selfish mining to be profitable (rev > alpha).
-    From the paper: alpha > (1 - gamma) / (3 - 2*gamma)
-    """
-    if gamma >= 1:
-        return 0.0
-    return (1 - gamma) / (3 - 2 * gamma)
-
-
-def handle_event(state: SimState, event: str, alpha: float, gamma: float) -> SimState:
-    """
-    Apply one step of the Eyal-Sirer state machine.
-
-    States are represented implicitly by `state.selfish_lead` (δ):
-      δ = 0  → both chains equal length
-      δ > 0  → selfish pool has a private lead of δ blocks
-      δ < 0  → honest chain is ahead (selfish pool lost a race)
-    """
-    pid = state.total_blocks_mined  # block id counter
-    delta = state.selfish_lead
-
-    if event == "selfish_finds":
-        # Selfish pool mines a block on their private chain
-        state.total_blocks_mined += 1
-        blk = Block(id=pid, block_type=BlockType.SELFISH,
-                    height=len(state.public_chain) + len(state.private_chain),
-                    miner="Selfish Pool")
-        state.private_chain.append(blk)
-        state.selfish_lead += 1
-        delta = state.selfish_lead
-
-        if delta == 1:
-            state.events.append("🔒 Selfish mined block #1 privately. Keeping secret (lead=1).")
-        else:
-            state.events.append(f"🔒 Selfish extends private chain. Lead now = {delta}.")
-
-    elif event == "honest_finds":
-        # Honest miner mines a block on the public chain
-        state.total_blocks_mined += 1
-        blk = Block(id=pid, block_type=BlockType.HONEST,
-                    height=len(state.public_chain),
-                    miner="Honest Miners")
-
-        if delta == 0:
-            # Both equal: honest block extends public chain, selfish pool starts fresh
-            state.public_chain.append(blk)
-            state.honest_blocks_in_main += 1
-            state.events.append("✅ Honest block added to public chain. Selfish lead stays 0.")
-
-        elif delta == 1:
-            # Tie! Selfish immediately publishes their one private block → race
-            # Fraction γ of honest miners adopt selfish block
-            race_blk = state.private_chain.pop()
-            race_blk.height = len(state.public_chain)
-            state.public_chain.append(race_blk)  # tentatively on public
-            state.selfish_lead = 0
-
-            # Honest block is the competing tip
-            # With probability γ, selfish wins the race (γ fraction of honest mines on it)
-            # We model it deterministically: selfish gets γ share, honest gets (1-γ)
-            # For the interactive sim we'll do a probabilistic draw
-            if random.random() < gamma:
-                # Selfish wins race: honest block becomes orphan
-                blk.is_orphan = True
-                state.orphaned_blocks.append(blk)
-                state.honest_orphan_count += 1
-                state.selfish_blocks_in_main += 1
-                state.events.append(
-                    f"⚔️ RACE! Selfish published. γ={gamma:.2f} → Selfish wins! "
-                    f"Honest block #{pid} ORPHANED. ☠️"
-                )
-            else:
-                # Honest wins race: selfish block becomes orphan
-                state.public_chain.pop()  # remove selfish block from public
-                race_blk.is_orphan = True
-                state.orphaned_blocks.append(race_blk)
-                state.selfish_orphan_count += 1
-                state.public_chain.append(blk)
-                state.honest_blocks_in_main += 1
-                state.events.append(
-                    f"⚔️ RACE! Selfish published. γ={gamma:.2f} → Honest wins. "
-                    f"Selfish block ORPHANED. ☠️"
-                )
-
-        elif delta == 2:
-            # Selfish publishes both private blocks — both are accepted
-            while state.private_chain:
-                pb = state.private_chain.pop(0)
-                pb.height = len(state.public_chain)
-                state.public_chain.append(pb)
-                state.selfish_blocks_in_main += 1
-            state.selfish_lead = 0
-            # Honest block is now stale (public chain just jumped ahead)
-            blk.is_orphan = True
-            state.orphaned_blocks.append(blk)
-            state.honest_orphan_count += 1
-            state.events.append(
-                f"🚀 SELFISH PUBLISHES 2 blocks! Honest block #{pid} ORPHANED. ☠️ Lead reset to 0."
-            )
-
-        elif delta > 2:
-            # Selfish publishes one block to match honest, maintains lead
-            pub_blk = state.private_chain.pop(0)
-            pub_blk.height = len(state.public_chain)
-            state.public_chain.append(pub_blk)
-            state.selfish_blocks_in_main += 1
-            state.selfish_lead -= 1
-            # Honest block still orphaned since public chain advances
-            blk.is_orphan = True
-            state.orphaned_blocks.append(blk)
-            state.honest_orphan_count += 1
-            state.events.append(
-                f"📤 Selfish releases 1 block. Honest block #{pid} ORPHANED. "
-                f"Lead now = {state.selfish_lead}."
-            )
-
-        else:
-            # delta < 0: shouldn't happen in normal SM, treat as honest wins
-            state.public_chain.append(blk)
-            state.honest_blocks_in_main += 1
-            state.selfish_lead = 0
-            state.events.append("✅ Honest block added (selfish reset).")
-
-    state.round_num += 1
-    return state
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Automated Simulation
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run_simulation(alpha: float, gamma: float, n_rounds: int = 500) -> pd.DataFrame:
-    """Run full automated simulation, return per-round statistics."""
-    state = SimState()
-    records = []
-
-    for _ in range(n_rounds):
-        event = "selfish_finds" if random.random() < alpha else "honest_finds"
-        state = handle_event(state, event, alpha, gamma)
-        records.append({
-            "round": state.round_num,
-            "selfish_lead": state.selfish_lead,
-            "selfish_revenue": state.revenue_selfish(),
-            "honest_revenue": state.revenue_honest(),
-            "honest_orphans": state.honest_orphan_count,
-            "selfish_orphans": state.selfish_orphan_count,
-            "public_chain_len": len(state.public_chain),
-        })
-
-    return pd.DataFrame(records), state
-
+from selfish_mining_sim import (
+    BlockType,
+    MiningEvent,
+    Miner,
+    SimState,
+    handle_event,
+    profitability_threshold,
+    run_simulation,
+    selfish_mining_revenue,
+)
+from selfish_mining_sim.theme import (
+    COL_PANEL,
+    COL_PLOT,
+    inject_theme_css,
+    legend_panel,
+    legend_top_left,
+    legend_top_right,
+    metric_card_html,
+    plotly_dark,
+    plotly_hooks_component,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Streamlit UI
@@ -263,274 +46,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CSS ──────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-/* Dark theme tweaks */
-[data-testid="stAppViewContainer"] { background: #0d1117; }
-[data-testid="stSidebar"] { background: #161b22; }
-
-/* Global text color: white-ish gray */
-[data-testid="stAppViewContainer"],
-[data-testid="stSidebar"] {
-    color: #e5e7eb !important;
-}
-/* Do not force gray onto real <button> labels (breaks secondary / default buttons) */
-[data-testid="stAppViewContainer"] *:not(button):not(button *),
-[data-testid="stSidebar"] *:not(button):not(button *) {
-    color: #d1d5db !important;
-}
-/* Sidebar form labels (sliders, radio) stay readable */
-[data-testid="stSidebar"] label {
-    color: #e5e7eb !important;
-}
-
-.metric-card {
-    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
-    border: 1px solid #374151;
-    border-radius: 12px;
-    padding: 16px 20px;
-    text-align: center;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-.metric-card .value {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #f59e0b;
-}
-.metric-card .label {
-    font-size: 0.8rem;
-    color: #9ca3af;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-top: 4px;
-}
-
-.block-public {
-    display: inline-block;
-    background: linear-gradient(135deg, #1e40af, #2563eb);
-    border: 2px solid #60a5fa;
-    border-radius: 8px;
-    padding: 6px 12px;
-    margin: 3px;
-    font-size: 0.75rem;
-    color: #f8fafc !important;
-    font-family: monospace;
-}
-/* Selfish block already on the public main chain — warm amber (distinct from honest blue & private red) */
-.block-selfish-main {
-    display: inline-block;
-    background: linear-gradient(135deg, #9a3412, #c2410c);
-    border: 2px solid #fb923c;
-    border-radius: 8px;
-    padding: 6px 12px;
-    margin: 3px;
-    font-size: 0.75rem;
-    color: #fff7ed !important;
-    font-family: monospace;
-}
-.block-selfish-private {
-    display: inline-block;
-    background: linear-gradient(135deg, #7f1d1d, #991b1b);
-    border: 2px solid #f87171;
-    border-radius: 8px;
-    padding: 6px 12px;
-    margin: 3px;
-    font-size: 0.75rem;
-    color: #fecaca !important;
-    font-family: monospace;
-}
-.block-orphan {
-    display: inline-block;
-    background: #1e293b;
-    border: 2px dashed #94a3b8;
-    border-radius: 8px;
-    padding: 6px 12px;
-    margin: 3px;
-    font-size: 0.75rem;
-    color: #cbd5e1 !important;
-    font-family: monospace;
-    text-decoration: line-through;
-}
-
-.event-log {
-    background: #0d1117;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 12px;
-    height: 200px;
-    overflow-y: auto;
-    font-family: monospace;
-    font-size: 0.82rem;
-}
-
-[data-testid="stCaption"] {
-    color: #cbd5e1 !important;
-}
-
-.lead-badge {
-    display: inline-block;
-    background: #78350f;
-    border: 2px solid #f59e0b;
-    border-radius: 20px;
-    padding: 4px 16px;
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #fde68a;
-}
-.lead-zero {
-    background: #064e3b;
-    border-color: #10b981;
-    color: #a7f3d0;
-}
-
-.section-header {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #f3f4f6;
-    border-left: 4px solid #f59e0b;
-    padding-left: 10px;
-    margin: 12px 0 8px 0;
-}
-
-.info-box {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-left: 4px solid #3b82f6;
-    border-radius: 6px;
-    padding: 12px 16px;
-    font-size: 0.9rem;
-    color: #eceff4;
-    margin: 8px 0;
-    line-height: 1.55;
-}
-.info-box * {
-    color: inherit !important;
-}
-.info-box strong {
-    color: #f9fafb !important;
-    font-weight: 700;
-}
-/* Inline <code>: global * color + default light bg made text invisible */
-.info-box code,
-[data-testid="stMarkdownContainer"] code {
-    background: #21262d !important;
-    color: #f3f4f6 !important;
-    border: 1px solid #30363d !important;
-    padding: 0.2em 0.5em !important;
-    border-radius: 6px !important;
-    font-size: 0.92em !important;
-}
-[data-testid="stMarkdownContainer"] pre {
-    background: #21262d !important;
-    border: 1px solid #30363d !important;
-    border-radius: 8px !important;
-    padding: 12px 14px !important;
-}
-[data-testid="stMarkdownContainer"] pre code {
-    background: transparent !important;
-    border: none !important;
-    padding: 0 !important;
-    color: #f3f4f6 !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Plotly 图例背景：默认半透明；悬停变实；移开 2 秒后恢复（需访问父页面 DOM）
-components.html(
-    """
-<div style="height:0;width:0;overflow:hidden;">plotly-legend-opacity</div>
-<script>
-(function () {
-  try {
-    var root = (window.parent && window.parent.document) ? window.parent.document : document;
-
-    var REST = 0.45;
-    var HOVER = 1.0;
-    var DELAY_MS = 1000;
-
-    function setFillOpacity(el, v) {
-      if (!el) return;
-      el.setAttribute("fill-opacity", String(v));
-      el.style.fillOpacity = String(v);
-    }
-
-    function hookLegend(g) {
-      if (!g || g.getAttribute("data-fillopacity-hook")) return;
-      var bg = g.querySelector("rect.bg") || g.querySelector("rect");
-      if (!bg) return;
-      g.setAttribute("data-fillopacity-hook", "1");
-      bg.style.transition = "fill-opacity 0.2s ease";
-      setFillOpacity(bg, REST);
-      var timer = null;
-      g.addEventListener("mouseenter", function () {
-        if (timer) { clearTimeout(timer); timer = null; }
-        setFillOpacity(bg, HOVER);
-      });
-      g.addEventListener("mouseleave", function () {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(function () {
-          setFillOpacity(bg, REST);
-          timer = null;
-        }, DELAY_MS);
-      });
-    }
-
-    function scan() {
-      root.querySelectorAll('[data-testid="stPlotlyChart"] svg g.legend').forEach(hookLegend);
-    }
-
-    if (!root.__plotlyLegendFillOpacityObs) {
-      root.__plotlyLegendFillOpacityObs = true;
-      var obs = new MutationObserver(scan);
-      if (root.body) obs.observe(root.body, { childList: true, subtree: true });
-      setInterval(scan, 1200);
-    }
-    scan();
-  } catch (e) {}
-})();
-
-(function () {
-  try {
-    var root = (window.parent && window.parent.document) ? window.parent.document : document;
-
-    function paintInteractiveActionButtons() {
-      root.querySelectorAll('[data-testid="stButton"] button').forEach(function (btn) {
-        if (btn.getAttribute("data-sl-style")) return;
-        var t = (btn.textContent || "").replace(/\s+/g, " ").trim();
-        if (t.indexOf("Honest Miner") !== -1) {
-          btn.setAttribute("data-sl-style", "honest");
-          btn.style.setProperty("background", "linear-gradient(135deg, #0f766e, #14b8a6)", "important");
-          btn.style.setProperty("color", "#ecfdf5", "important");
-          btn.style.setProperty("border", "1px solid #5eead4", "important");
-          btn.querySelectorAll("p, span, div").forEach(function (n) {
-            n.style.setProperty("color", "#ecfdf5", "important");
-          });
-        } else if (t.indexOf("Reset Simulation") !== -1) {
-          btn.setAttribute("data-sl-style", "reset");
-          btn.style.setProperty("background", "linear-gradient(135deg, #334155, #64748b)", "important");
-          btn.style.setProperty("color", "#f8fafc", "important");
-          btn.style.setProperty("border", "1px solid #94a3b8", "important");
-          btn.querySelectorAll("p, span, div").forEach(function (n) {
-            n.style.setProperty("color", "#f8fafc", "important");
-          });
-        }
-      });
-    }
-
-    if (!root.__stInteractiveActionBtnPaint) {
-      root.__stInteractiveActionBtnPaint = true;
-      var obs = new MutationObserver(paintInteractiveActionButtons);
-      if (root.body) obs.observe(root.body, { childList: true, subtree: true });
-      setInterval(paintInteractiveActionButtons, 1200);
-    }
-    paintInteractiveActionButtons();
-  } catch (e) {}
-})();
-</script>
-""",
-    height=1,
-)
+# ── Theme (assets/theme.css + assets/plotly_hooks.js)
+inject_theme_css()
+plotly_hooks_component()
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -645,24 +163,14 @@ if "Theory" in mode:
         ))
 
         fig_heat.update_layout(
-            height=520,
-            paper_bgcolor="#0d1117",
-            plot_bgcolor="#0d1117",
-            font=dict(color="#e8eaed"),
-            xaxis=dict(title="α (Selfish Hash Rate)", gridcolor="#21262d", tickformat=".0%"),
-            yaxis=dict(title="γ (Propagation Advantage)", gridcolor="#21262d", tickformat=".0%"),
-            legend=dict(
-                bgcolor="#161b22",
-                bordercolor="#374151",
-                borderwidth=1,
-                font=dict(color="#e8eaed", size=12),
-                x=0.99,
-                y=0.99,
-                xanchor="right",
-                yanchor="top",
-                valign="top",
-            ),
-            margin=dict(l=60, r=110, t=65, b=60),
+            **plotly_dark(
+                height=520,
+                plot_bgcolor=COL_PLOT,
+                margin=dict(l=60, r=110, t=65, b=60),
+                legend=legend_top_right(),
+                xaxis=dict(title="α (Selfish Hash Rate)", gridcolor="#21262d", tickformat=".0%"),
+                yaxis=dict(title="γ (Propagation Advantage)", gridcolor="#21262d", tickformat=".0%"),
+            )
         )
         st.plotly_chart(fig_heat, width="stretch")
 
@@ -705,21 +213,14 @@ if "Theory" in mode:
         ))
 
         fig_rev.update_layout(
-            height=520,
-            paper_bgcolor="#0d1117",
-            plot_bgcolor="#0d1117",
-            font=dict(color="#e8eaed"),
-            xaxis=dict(title="α", gridcolor="#21262d", tickformat=".0%"),
-            yaxis=dict(title="Relative Revenue", gridcolor="#21262d", tickformat=".0%"),
-            legend=dict(
-                bgcolor="#161b22",
-                bordercolor="#374151",
-                borderwidth=1,
-                x=0.01,
-                y=0.99,
-                font=dict(color="#e8eaed", size=12),
-            ),
-            margin=dict(l=60, r=20, t=65, b=60),
+            **plotly_dark(
+                height=520,
+                plot_bgcolor=COL_PLOT,
+                margin=dict(l=60, r=20, t=65, b=60),
+                legend=legend_top_left(),
+                xaxis=dict(title="α", gridcolor="#21262d", tickformat=".0%"),
+                yaxis=dict(title="Relative Revenue", gridcolor="#21262d", tickformat=".0%"),
+            )
         )
         st.plotly_chart(fig_rev, width="stretch")
 
@@ -729,32 +230,31 @@ if "Theory" in mode:
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="value">{alpha*100:.1f}%</div>
-            <div class="label">Hash Rate α</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            metric_card_html(f"{alpha * 100:.1f}%", "Hash Rate α"),
+            unsafe_allow_html=True,
+        )
     with c2:
         color = "#10b981" if excess > 0 else "#ef4444"
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="value" style="color:{color}">{cur_rev*100:.1f}%</div>
-            <div class="label">Selfish Revenue</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            metric_card_html(f"{cur_rev * 100:.1f}%", "Selfish Revenue", value_color=color),
+            unsafe_allow_html=True,
+        )
     with c3:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="value" style="color:{'#10b981' if excess > 0 else '#ef4444'}">
-                {'+' if excess >= 0 else ''}{excess*100:.1f}%
-            </div>
-            <div class="label">Excess vs Fair</div>
-        </div>""", unsafe_allow_html=True)
+        exc_color = "#10b981" if excess > 0 else "#ef4444"
+        st.markdown(
+            metric_card_html(
+                f"{'+' if excess >= 0 else ''}{excess * 100:.1f}%",
+                "Excess vs Fair",
+                value_color=exc_color,
+            ),
+            unsafe_allow_html=True,
+        )
     with c4:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="value">{threshold*100:.1f}%</div>
-            <div class="label">Threshold α*</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            metric_card_html(f"{threshold * 100:.1f}%", "Threshold α*"),
+            unsafe_allow_html=True,
+        )
 
     # ── State Machine Diagram ──────────────────────────────────────────────
     st.divider()
@@ -824,13 +324,14 @@ if "Theory" in mode:
         )
 
     fig_sm.update_layout(
-        height=400,
-        autosize=True,
-        paper_bgcolor="#0d1117",
-        plot_bgcolor="#161b22",
-        xaxis=dict(visible=False, range=[-0.5, 6]),
-        yaxis=dict(visible=False, range=[-0.72, 1.22]),
-        margin=dict(l=10, r=10, t=10, b=10),
+        **plotly_dark(
+            height=400,
+            plot_bgcolor=COL_PANEL,
+            margin=dict(l=10, r=10, t=10, b=10),
+            autosize=True,
+            xaxis=dict(visible=False, range=[-0.5, 6]),
+            yaxis=dict(visible=False, range=[-0.72, 1.22]),
+        )
     )
     st.plotly_chart(fig_sm, width="stretch")
 
@@ -908,14 +409,16 @@ elif "Interactive" in mode:
             key="interactive_btn_honest",
         ):
             st.session_state.sim_state = handle_event(
-                st.session_state.sim_state, "honest_finds", alpha, gamma)
+                st.session_state.sim_state, MiningEvent.HONEST_FINDS, gamma
+            )
             st.session_state.history.append(("honest", st.session_state.sim_state.revenue_selfish()))
             st.rerun()
 
     with btn_col2:
         if st.button("🔒 Selfish Miner Finds Block", width="stretch", type="primary"):
             st.session_state.sim_state = handle_event(
-                st.session_state.sim_state, "selfish_finds", alpha, gamma)
+                st.session_state.sim_state, MiningEvent.SELFISH_FINDS, gamma
+            )
             st.session_state.history.append(("selfish", st.session_state.sim_state.revenue_selfish()))
             st.rerun()
 
@@ -957,7 +460,7 @@ elif "Interactive" in mode:
                     if blk.block_type == BlockType.HONEST
                     else "block-selfish-main"
                 )
-                miner_icon = "👤" if blk.miner == "Honest Miners" else "⛏️"
+                miner_icon = "👤" if blk.miner == Miner.HONEST else "⛏️"
                 chain_html += f'<span class="{badge}">{miner_icon} #{blk.id}</span> → '
             chain_html = chain_html.rstrip(" → ")
             st.markdown(chain_html + " 🏁", unsafe_allow_html=True)
@@ -983,7 +486,7 @@ elif "Interactive" in mode:
         orphan_html = ""
         for blk in state.orphaned_blocks[-20:]:
             orphan_html += (f'<span class="block-orphan">'
-                            f'{"👤" if blk.miner == "Honest Miners" else "🔴"} #{blk.id}</span> ')
+                            f'{"👤" if blk.miner == Miner.HONEST else "🔴"} #{blk.id}</span> ')
         st.markdown(orphan_html, unsafe_allow_html=True)
 
     # ── Live Metrics ───────────────────────────────────────────────────────
@@ -992,41 +495,42 @@ elif "Interactive" in mode:
     m1, m2, m3, m4, m5 = st.columns(5)
 
     with m1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="value">{state.round_num}</div>
-            <div class="label">Rounds Played</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            metric_card_html(str(state.round_num), "Rounds Played"),
+            unsafe_allow_html=True,
+        )
     with m2:
         rev_s = state.revenue_selfish()
         color = "#10b981" if rev_s > alpha else "#ef4444"
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="value" style="color:{color}">{rev_s*100:.1f}%</div>
-            <div class="label">Selfish Revenue</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            metric_card_html(f"{rev_s * 100:.1f}%", "Selfish Revenue", value_color=color),
+            unsafe_allow_html=True,
+        )
     with m3:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="value">{state.revenue_honest()*100:.1f}%</div>
-            <div class="label">Honest Revenue</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            metric_card_html(f"{state.revenue_honest() * 100:.1f}%", "Honest Revenue"),
+            unsafe_allow_html=True,
+        )
     with m4:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="value" style="color:#ef4444">{state.honest_orphan_count}</div>
-            <div class="label">Honest Orphans ☠️</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            metric_card_html(
+                str(state.honest_orphan_count),
+                "Honest Orphans ☠️",
+                value_color="#ef4444",
+            ),
+            unsafe_allow_html=True,
+        )
     with m5:
         excess = rev_s - alpha
         color2 = "#10b981" if excess > 0 else "#ef4444"
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="value" style="color:{color2}">
-                {'+' if excess >= 0 else ''}{excess*100:.1f}%
-            </div>
-            <div class="label">Excess vs Fair</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            metric_card_html(
+                f"{'+' if excess >= 0 else ''}{excess * 100:.1f}%",
+                "Excess vs Fair",
+                value_color=color2,
+            ),
+            unsafe_allow_html=True,
+        )
 
     # ── Revenue History Chart ──────────────────────────────────────────────
     if len(st.session_state.history) >= 2:
@@ -1054,18 +558,14 @@ elif "Interactive" in mode:
             name="Selfish Revenue",
         ))
         fig_hist.update_layout(
-            height=260,
-            paper_bgcolor="#0d1117", plot_bgcolor="#161b22",
-            font=dict(color="#e8eaed"),
-            xaxis=dict(title="Round", gridcolor="#21262d"),
-            yaxis=dict(title="Revenue Share", gridcolor="#21262d", tickformat=".0%"),
-            legend=dict(
-                bgcolor="#161b22",
-                bordercolor="#374151",
-                borderwidth=1,
-                font=dict(color="#e8eaed", size=12),
-            ),
-            margin=dict(l=60, r=20, t=20, b=50),
+            **plotly_dark(
+                height=260,
+                plot_bgcolor=COL_PANEL,
+                margin=dict(l=60, r=20, t=20, b=50),
+                legend=legend_panel(),
+                xaxis=dict(title="Round", gridcolor="#21262d"),
+                yaxis=dict(title="Revenue Share", gridcolor="#21262d", tickformat=".0%"),
+            )
         )
         st.plotly_chart(fig_hist, width="stretch")
 
@@ -1114,38 +614,44 @@ elif "Auto" in mode:
 
         c1, c2, c3, c4, c5 = st.columns(5)
         with c1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="value">{alpha*100:.1f}%</div>
-                <div class="label">Hash Rate α</div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(
+                metric_card_html(f"{alpha * 100:.1f}%", "Hash Rate α"),
+                unsafe_allow_html=True,
+            )
         with c2:
             color = "#10b981" if excess > 0 else "#ef4444"
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="value" style="color:{color}">{final_rev*100:.1f}%</div>
-                <div class="label">Simulated Revenue</div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(
+                metric_card_html(
+                    f"{final_rev * 100:.1f}%", "Simulated Revenue", value_color=color
+                ),
+                unsafe_allow_html=True,
+            )
         with c3:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="value">{theoretical_rev*100:.1f}%</div>
-                <div class="label">Theoretical Revenue</div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(
+                metric_card_html(f"{theoretical_rev * 100:.1f}%", "Theoretical Revenue"),
+                unsafe_allow_html=True,
+            )
         with c4:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="value" style="color:#ef4444">{final_state.honest_orphan_count}</div>
-                <div class="label">Honest Orphans ☠️</div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(
+                metric_card_html(
+                    str(final_state.honest_orphan_count),
+                    "Honest Orphans ☠️",
+                    value_color="#ef4444",
+                ),
+                unsafe_allow_html=True,
+            )
         with c5:
-            orphan_rate = final_state.honest_orphan_count / max(1,
-                final_state.honest_orphan_count + final_state.honest_blocks_in_main)
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="value" style="color:#f59e0b">{orphan_rate*100:.1f}%</div>
-                <div class="label">Honest Orphan Rate</div>
-            </div>""", unsafe_allow_html=True)
+            orphan_rate = final_state.honest_orphan_count / max(
+                1, final_state.honest_orphan_count + final_state.honest_blocks_in_main
+            )
+            st.markdown(
+                metric_card_html(
+                    f"{orphan_rate * 100:.1f}%",
+                    "Honest Orphan Rate",
+                    value_color="#f59e0b",
+                ),
+                unsafe_allow_html=True,
+            )
 
         # ── Revenue Over Time ──────────────────────────────────────────
         st.divider()
@@ -1204,17 +710,12 @@ elif "Auto" in mode:
         fig_sim.add_vline(x=theoretical_rev, line_color="#10b981", line_dash="dash", row=2, col=2)
 
         fig_sim.update_layout(
-            height=600,
-            paper_bgcolor="#0d1117",
-            plot_bgcolor="#161b22",
-            font=dict(color="#e8eaed"),
-            showlegend=True,
-            legend=dict(
-                bgcolor="#161b22",
-                bordercolor="#374151",
-                borderwidth=1,
-                font=dict(color="#e8eaed", size=12),
-            ),
+            **plotly_dark(
+                height=600,
+                plot_bgcolor=COL_PANEL,
+                showlegend=True,
+                legend=legend_panel(),
+            )
         )
         for ann in fig_sim.layout.annotations:
             ann.font.color = "#9ca3af"
@@ -1268,18 +769,14 @@ elif "Auto" in mode:
             arrowcolor="#ef4444", arrowhead=2)
 
         fig_sweep.update_layout(
-            height=360,
-            paper_bgcolor="#0d1117", plot_bgcolor="#161b22",
-            font=dict(color="#e8eaed"),
-            xaxis=dict(title="α (Hash Rate)", gridcolor="#21262d", tickformat=".0%"),
-            yaxis=dict(title="Revenue Share", gridcolor="#21262d", tickformat=".0%"),
-            legend=dict(
-                bgcolor="#161b22",
-                bordercolor="#374151",
-                borderwidth=1,
-                font=dict(color="#e8eaed", size=12),
-            ),
-            margin=dict(l=60, r=20, t=20, b=60),
+            **plotly_dark(
+                height=360,
+                plot_bgcolor=COL_PANEL,
+                margin=dict(l=60, r=20, t=20, b=60),
+                legend=legend_panel(),
+                xaxis=dict(title="α (Hash Rate)", gridcolor="#21262d", tickformat=".0%"),
+                yaxis=dict(title="Revenue Share", gridcolor="#21262d", tickformat=".0%"),
+            )
         )
         st.plotly_chart(fig_sweep, width="stretch")
 

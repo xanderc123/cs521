@@ -1,0 +1,167 @@
+/* Dark theme tweaks */
+[data-testid="stAppViewContainer"] { background: #0d1117; }
+[data-testid="stSidebar"] { background: #161b22; }
+
+/* Global text color: white-ish gray */
+[data-testid="stAppViewContainer"],
+[data-testid="stSidebar"] {
+    color: #e5e7eb !important;
+}
+/* Do not force gray onto real <button> labels (breaks secondary / default buttons) */
+[data-testid="stAppViewContainer"] *:not(button):not(button *),
+[data-testid="stSidebar"] *:not(button):not(button *) {
+    color: #d1d5db !important;
+}
+/* Sidebar form labels (sliders, radio) stay readable */
+[data-testid="stSidebar"] label {
+    color: #e5e7eb !important;
+}
+
+.metric-card {
+    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    border: 1px solid #374151;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.metric-card .value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #f59e0b;
+}
+.metric-card .label {
+    font-size: 0.8rem;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 4px;
+}
+
+.block-public {
+    display: inline-block;
+    background: linear-gradient(135deg, #1e40af, #2563eb);
+    border: 2px solid #60a5fa;
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin: 3px;
+    font-size: 0.75rem;
+    color: #f8fafc !important;
+    font-family: monospace;
+}
+/* Selfish block already on the public main chain — warm amber (distinct from honest blue & private red) */
+.block-selfish-main {
+    display: inline-block;
+    background: linear-gradient(135deg, #9a3412, #c2410c);
+    border: 2px solid #fb923c;
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin: 3px;
+    font-size: 0.75rem;
+    color: #fff7ed !important;
+    font-family: monospace;
+}
+.block-selfish-private {
+    display: inline-block;
+    background: linear-gradient(135deg, #7f1d1d, #991b1b);
+    border: 2px solid #f87171;
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin: 3px;
+    font-size: 0.75rem;
+    color: #fecaca !important;
+    font-family: monospace;
+}
+.block-orphan {
+    display: inline-block;
+    background: #1e293b;
+    border: 2px dashed #94a3b8;
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin: 3px;
+    font-size: 0.75rem;
+    color: #cbd5e1 !important;
+    font-family: monospace;
+    text-decoration: line-through;
+}
+
+.event-log {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 12px;
+    height: 200px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.82rem;
+}
+
+[data-testid="stCaption"] {
+    color: #cbd5e1 !important;
+}
+
+.lead-badge {
+    display: inline-block;
+    background: #78350f;
+    border: 2px solid #f59e0b;
+    border-radius: 20px;
+    padding: 4px 16px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fde68a;
+}
+.lead-zero {
+    background: #064e3b;
+    border-color: #10b981;
+    color: #a7f3d0;
+}
+
+.section-header {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #f3f4f6;
+    border-left: 4px solid #f59e0b;
+    padding-left: 10px;
+    margin: 12px 0 8px 0;
+}
+
+.info-box {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-left: 4px solid #3b82f6;
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 0.9rem;
+    color: #eceff4;
+    margin: 8px 0;
+    line-height: 1.55;
+}
+.info-box * {
+    color: inherit !important;
+}
+.info-box strong {
+    color: #f9fafb !important;
+    font-weight: 700;
+}
+/* Inline <code>: global * color + default light bg made text invisible */
+.info-box code,
+[data-testid="stMarkdownContainer"] code {
+    background: #21262d !important;
+    color: #f3f4f6 !important;
+    border: 1px solid #30363d !important;
+    padding: 0.2em 0.5em !important;
+    border-radius: 6px !important;
+    font-size: 0.92em !important;
+}
+[data-testid="stMarkdownContainer"] pre {
+    background: #21262d !important;
+    border: 1px solid #30363d !important;
+    border-radius: 8px !important;
+    padding: 12px 14px !important;
+}
+[data-testid="stMarkdownContainer"] pre code {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    color: #f3f4f6 !important;
+}

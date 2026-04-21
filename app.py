@@ -41,7 +41,7 @@ from selfish_mining_sim.theme import (
 
 st.set_page_config(
     page_title="Bitcoin Selfish Mining Simulator",
-    page_icon="⛏️",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -53,13 +53,13 @@ plotly_hooks_component()
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## ⛏️ Selfish Mining Simulator")
+    st.markdown("## Selfish Mining Simulator")
     st.markdown("*Eyal & Sirer, 2014*")
     st.divider()
 
     mode = st.radio(
         "Mode",
-        ["📊 Theory & Analysis", "🎮 Interactive Step-by-Step", "🤖 Auto Simulation"],
+        ["Theory & Analysis", "Interactive Step-by-Step", "Auto Simulation"],
         index=0,
     )
     st.divider()
@@ -82,9 +82,9 @@ with st.sidebar:
     st.divider()
     st.markdown("### Profitability Check")
     if is_profitable:
-        st.success(f"✅ Profitable! α={alpha:.2f} > threshold {threshold:.3f}")
+        st.success(f"Profitable: α={alpha:.2f} > threshold {threshold:.3f}")
     else:
-        st.error(f"❌ Not Profitable. α={alpha:.2f} ≤ threshold {threshold:.3f}")
+        st.error(f"Not profitable: α={alpha:.2f} ≤ threshold {threshold:.3f}")
 
     st.markdown(f"""
 <div class="info-box">
@@ -100,7 +100,7 @@ At γ={gamma:.2f} → α* ≈ <strong>{threshold:.3f}</strong> ({threshold*100:.
 # ─────────────────────────────────────────────────────────────────────────────
 
 if "Theory" in mode:
-    st.title("⛏️ Bitcoin Selfish Mining — Theory & Analysis")
+    st.title("Bitcoin Selfish Mining — Theory & Analysis")
     st.markdown("> *\"Majority is not Enough: Bitcoin Mining is Vulnerable\"* — Eyal & Sirer (2014)")
 
     # ── Profitability Heat-Map ─────────────────────────────────────────────
@@ -346,16 +346,16 @@ if "Theory" in mode:
 <strong>δ = 1 (SM leads by 1):</strong><br>
 • Honest mines → RACE! SM publishes secret block.<br>
   &nbsp;&nbsp;- γ fraction of honest mines on SM block.<br>
-  &nbsp;&nbsp;- If SM wins: honest block orphaned. ☠️<br>
+  &nbsp;&nbsp;- If SM wins: honest block orphaned.<br>
 • SM mines → δ becomes 2.<br><br>
 
 <strong>δ = 2 (SM leads by 2):</strong><br>
 • Honest mines → SM publishes both blocks immediately.<br>
-  Honest block is orphaned. ☠️ δ resets to 0.<br>
+  Honest block is orphaned. δ resets to 0.<br>
 • SM mines → δ becomes 3.<br><br>
 
 <strong>δ ≥ 3 (Large lead):</strong><br>
-• Honest mines → SM releases 1 block. Honest orphaned. ☠️<br>
+• Honest mines → SM releases 1 block. Honest orphaned.<br>
   δ decreases by 1 (SM stays ahead).<br>
 • SM mines → δ increases by 1.
 </div>
@@ -386,7 +386,7 @@ own blocks are always on the winning chain.
 # ─────────────────────────────────────────────────────────────────────────────
 
 elif "Interactive" in mode:
-    st.title("🎮 Interactive Selfish Mining — Step-by-Step")
+    st.title("Interactive Selfish Mining — Step-by-Step")
     st.markdown("*Click the buttons below to manually advance the mining process and observe the attack in real time.*")
 
     # Initialize session state
@@ -403,7 +403,7 @@ elif "Interactive" in mode:
 
     with btn_col1:
         if st.button(
-            "⛏️ Honest Miner Finds Block",
+            "Honest Miner Finds Block",
             width="stretch",
             type="secondary",
             key="interactive_btn_honest",
@@ -415,7 +415,7 @@ elif "Interactive" in mode:
             st.rerun()
 
     with btn_col2:
-        if st.button("🔒 Selfish Miner Finds Block", width="stretch", type="primary"):
+        if st.button("Selfish Miner Finds Block", width="stretch", type="primary"):
             st.session_state.sim_state = handle_event(
                 st.session_state.sim_state, MiningEvent.SELFISH_FINDS, gamma
             )
@@ -424,7 +424,7 @@ elif "Interactive" in mode:
 
     with btn_col3:
         if st.button(
-            "🔄 Reset Simulation",
+            "Reset Simulation",
             width="stretch",
             type="secondary",
             key="interactive_btn_reset",
@@ -439,9 +439,8 @@ elif "Interactive" in mode:
     st.divider()
 
     lead_class = "lead-zero" if state.selfish_lead == 0 else ""
-    lead_emoji = "🟢" if state.selfish_lead == 0 else ("🔴" if state.selfish_lead > 0 else "⚪")
     st.markdown(
-        f'### Chain Status &nbsp;&nbsp; {lead_emoji} '
+        f'### Chain Status &nbsp;&nbsp; '
         f'<span class="lead-badge {lead_class}">Selfish Lead δ = {state.selfish_lead}</span>',
         unsafe_allow_html=True
     )
@@ -449,7 +448,7 @@ elif "Interactive" in mode:
     chain_col1, chain_col2 = st.columns(2)
 
     with chain_col1:
-        st.markdown("#### 🌐 Public Chain")
+        st.markdown("#### Public Chain")
         if not state.public_chain:
             st.markdown("*[Genesis Block]*")
         else:
@@ -460,33 +459,33 @@ elif "Interactive" in mode:
                     if blk.block_type == BlockType.HONEST
                     else "block-selfish-main"
                 )
-                miner_icon = "👤" if blk.miner == Miner.HONEST else "⛏️"
+                miner_icon = "H" if blk.miner == Miner.HONEST else "S"
                 chain_html += f'<span class="{badge}">{miner_icon} #{blk.id}</span> → '
             chain_html = chain_html.rstrip(" → ")
-            st.markdown(chain_html + " 🏁", unsafe_allow_html=True)
+            st.markdown(chain_html + " <span class=\"chain-tip\">(tip)</span>", unsafe_allow_html=True)
         st.caption(f"Length: {len(state.public_chain)} blocks  |  "
-                   f"🔵 Honest: {state.honest_blocks_in_main}  |  "
-                   f"🔴 Selfish: {state.selfish_blocks_in_main}")
+                   f"Honest: {state.honest_blocks_in_main}  |  "
+                   f"Selfish: {state.selfish_blocks_in_main}")
 
     with chain_col2:
-        st.markdown("#### 🔒 Selfish Private Chain (Hidden!)")
+        st.markdown("#### Selfish Private Chain (Hidden)")
         if not state.private_chain:
             st.markdown("*[Empty — no secret blocks]*")
         else:
             priv_html = ""
             for blk in state.private_chain:
-                priv_html += f'<span class="block-selfish-private">🔴 #{blk.id}</span> → '
+                priv_html += f'<span class="block-selfish-private">S #{blk.id}</span> → '
             priv_html = priv_html.rstrip(" → ")
-            st.markdown(priv_html + " 🔒", unsafe_allow_html=True)
+            st.markdown(priv_html + " <span class=\"chain-tip\">(held)</span>", unsafe_allow_html=True)
         st.caption(f"Private blocks held: {len(state.private_chain)}")
 
     # Orphan graveyard
     if state.orphaned_blocks:
-        st.markdown("#### ☠️ Orphaned Blocks")
+        st.markdown("#### Orphaned Blocks")
         orphan_html = ""
         for blk in state.orphaned_blocks[-20:]:
             orphan_html += (f'<span class="block-orphan">'
-                            f'{"👤" if blk.miner == Miner.HONEST else "🔴"} #{blk.id}</span> ')
+                            f'{"H" if blk.miner == Miner.HONEST else "S"} #{blk.id}</span> ')
         st.markdown(orphan_html, unsafe_allow_html=True)
 
     # ── Live Metrics ───────────────────────────────────────────────────────
@@ -515,7 +514,7 @@ elif "Interactive" in mode:
         st.markdown(
             metric_card_html(
                 str(state.honest_orphan_count),
-                "Honest Orphans ☠️",
+                "Honest Orphans",
                 value_color="#ef4444",
             ),
             unsafe_allow_html=True,
@@ -584,8 +583,8 @@ elif "Interactive" in mode:
 <div class="info-box" style="margin-top:16px">
 <strong>Presentation Tips:</strong><br>
 • Start with a few <em>Honest</em> blocks to show normal mining, then switch to <em>Selfish</em>.<br>
-• Watch the 🔒 private chain grow. When an honest block appears at δ=1 or δ=2, notice what happens.<br>
-• The ☠️ <em>orphan count</em> is the key metric — honest miners waste their work.<br>
+• Watch the private chain grow. When an honest block appears at δ=1 or δ=2, notice what happens.<br>
+• The <em>orphan count</em> is the key metric — honest miners waste their work.<br>
 • Try setting α=0.33, γ=0.5 (the classic "25% threshold" scenario).
 </div>
 """, unsafe_allow_html=True)
@@ -596,12 +595,12 @@ elif "Interactive" in mode:
 # ─────────────────────────────────────────────────────────────────────────────
 
 elif "Auto" in mode:
-    st.title("🤖 Automated Selfish Mining Simulation")
+    st.title("Automated Selfish Mining Simulation")
     st.markdown("*Run thousands of rounds and analyze the statistical outcome.*")
 
     n_rounds = st.slider("Number of Rounds", 100, 5000, 1000, 100)
 
-    if st.button("▶️ Run Simulation", type="primary", width="stretch"):
+    if st.button("Run Simulation", type="primary", width="stretch"):
         with st.spinner("Simulating..."):
             df, final_state = run_simulation(alpha, gamma, n_rounds)
 
@@ -635,7 +634,7 @@ elif "Auto" in mode:
             st.markdown(
                 metric_card_html(
                     str(final_state.honest_orphan_count),
-                    "Honest Orphans ☠️",
+                    "Honest Orphans",
                     value_color="#ef4444",
                 ),
                 unsafe_allow_html=True,
@@ -781,5 +780,5 @@ elif "Auto" in mode:
         st.plotly_chart(fig_sweep, width="stretch")
 
         # ── Raw Stats ─────────────────────────────────────────────────
-        with st.expander("📋 Raw Statistics"):
+        with st.expander("Raw Statistics"):
             st.dataframe(df.describe().T.style.format("{:.4f}"), width="stretch")

@@ -51,16 +51,16 @@ def _handle_selfish_finds(state: SimState) -> None:
     delta = state.selfish_lead
     if delta == 1:
         state.events.append(
-            "🔒 Selfish mined block #1 privately. Keeping secret (lead=1)."
+            "Selfish mined block #1 privately. Keeping secret (lead=1)."
         )
     else:
-        state.events.append(f"🔒 Selfish extends private chain. Lead now = {delta}.")
+        state.events.append(f"Selfish extends private chain. Lead now = {delta}.")
 
 
 def _honest_lead_zero(state: SimState, blk: Block) -> None:
     state.public_chain.append(blk)
     state.honest_blocks_in_main += 1
-    state.events.append("✅ Honest block added to public chain. Selfish lead stays 0.")
+    state.events.append("Honest block added to public chain. Selfish lead stays 0.")
 
 
 def _honest_lead_one_race(state: SimState, blk: Block, pid: int, gamma: float) -> None:
@@ -75,8 +75,8 @@ def _honest_lead_one_race(state: SimState, blk: Block, pid: int, gamma: float) -
         state.honest_orphan_count += 1
         state.selfish_blocks_in_main += 1
         state.events.append(
-            f"⚔️ RACE! Selfish published. γ={gamma:.2f} → Selfish wins! "
-            f"Honest block #{pid} ORPHANED. ☠️"
+            f"RACE: Selfish published. γ={gamma:.2f} → Selfish wins. "
+            f"Honest block #{pid} orphaned."
         )
     else:
         state.public_chain.pop()
@@ -86,8 +86,8 @@ def _honest_lead_one_race(state: SimState, blk: Block, pid: int, gamma: float) -
         state.public_chain.append(blk)
         state.honest_blocks_in_main += 1
         state.events.append(
-            f"⚔️ RACE! Selfish published. γ={gamma:.2f} → Honest wins. "
-            f"Selfish block ORPHANED. ☠️"
+            f"RACE: Selfish published. γ={gamma:.2f} → Honest wins. "
+            f"Selfish block orphaned."
         )
 
 
@@ -102,7 +102,7 @@ def _honest_lead_two(state: SimState, blk: Block, pid: int) -> None:
     state.orphaned_blocks.append(blk)
     state.honest_orphan_count += 1
     state.events.append(
-        f"🚀 SELFISH PUBLISHES 2 blocks! Honest block #{pid} ORPHANED. ☠️ Lead reset to 0."
+        f"Selfish publishes 2 blocks. Honest block #{pid} orphaned. Lead reset to 0."
     )
 
 
@@ -116,7 +116,7 @@ def _honest_lead_gt_two(state: SimState, blk: Block, pid: int) -> None:
     state.orphaned_blocks.append(blk)
     state.honest_orphan_count += 1
     state.events.append(
-        f"📤 Selfish releases 1 block. Honest block #{pid} ORPHANED. "
+        f"Selfish releases 1 block. Honest block #{pid} orphaned. "
         f"Lead now = {state.selfish_lead}."
     )
 
@@ -125,7 +125,7 @@ def _honest_lead_negative(state: SimState, blk: Block) -> None:
     state.public_chain.append(blk)
     state.honest_blocks_in_main += 1
     state.selfish_lead = 0
-    state.events.append("✅ Honest block added (selfish reset).")
+    state.events.append("Honest block added (selfish reset).")
 
 
 def _handle_honest_finds(state: SimState, gamma: float) -> None:

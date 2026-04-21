@@ -53,7 +53,7 @@ plotly_hooks_component()
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## ⛏️ Selfish Mining Sim")
+    st.markdown("## ⛏️ Selfish Mining Simulator")
     st.markdown("*Eyal & Sirer, 2014*")
     st.divider()
 

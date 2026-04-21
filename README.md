@@ -67,13 +67,18 @@ When R(α, γ) > α, the selfish pool earns a *disproportionate* share — the c
 ### Installation
 
 ```bash
-# 1. Clone / navigate to the project directory
-cd cs521
+# 1. Clone the repo, then go to the folder that contains app.py
+cd cs521   # or: cd Final_Project — use whatever directory name you cloned into
 
-# 2. Install dependencies
+# 2. (Recommended) Python 3.11 virtual environment
+python -m venv .venv311
+.\.venv311\Scripts\activate          # Windows PowerShell
+# source .venv311/bin/activate       # macOS / Linux
+
+# 3. Install dependencies
 pip install streamlit plotly pandas numpy
 
-# 3. Launch the app
+# 4. Launch the app (must be run from this directory so assets/ loads correctly)
 streamlit run app.py
 ```
 
@@ -149,11 +154,24 @@ Runs a full statistical simulation (up to 5,000 rounds) and displays:
 
 ## Project Structure
 
+Repository layout (all paths relative to the directory that contains `app.py`):
+
 ```
-cs521/
-├── app.py          # Complete Streamlit application
-└── README.md       # This file
+.
+├── app.py                    # Streamlit entry: page config, sidebar, three modes, Plotly charts
+├── README.md
+├── .gitignore                # Ignores e.g. .venv311/
+├── assets/
+│   ├── theme.css             # Injected global styles (dark theme, metric cards, blocks, …)
+│   └── plotly_hooks.js       # Injected script: Plotly legend opacity + interactive button paint
+└── selfish_mining_sim/       # Importable package (simulation + UI helpers)
+    ├── __init__.py           # Re-exports models + engine API
+    ├── models.py             # Block, SimState, BlockType, MiningEvent, Miner
+    ├── engine.py             # R(α,γ), profitability threshold, handle_event, run_simulation
+    └── theme.py              # Reads assets/, inject_theme_css, plotly_hooks_component, plotly_dark, metric_card_html
 ```
+
+`app.py` imports `selfish_mining_sim` for domain logic and theme helpers; CSS/JS are loaded from `assets/` at runtime, so keep the working directory at the project root when you run Streamlit.
 
 ---
 
